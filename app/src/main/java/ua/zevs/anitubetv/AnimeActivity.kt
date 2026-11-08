@@ -67,6 +67,21 @@ class AnimeActivity : Activity() {
         }
     }
 
+    /** Back: episodes -> dub/player list -> anime list. */
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (episodesView.hasFocus() && sourcesAdapter.itemCount > 0) {
+            sourcesView.scrollToPosition(current)
+            sourcesView.post {
+                val vh = sourcesView.findViewHolderForAdapterPosition(current)
+                (vh?.itemView ?: sourcesView.getChildAt(0))?.requestFocus()
+            }
+            return
+        }
+        @Suppress("DEPRECATION")
+        super.onBackPressed()
+    }
+
     private fun load() {
         progress.visibility = View.VISIBLE
         message.visibility = View.GONE

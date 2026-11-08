@@ -16,6 +16,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
@@ -41,6 +42,8 @@ class PlayerActivity : Activity() {
     private var player: ExoPlayer? = null
     private lateinit var dataSourceFactory: OkHttpDataSource.Factory
     private var resolving: Cancelable? = null
+    /** fenix needs ?token= on every playlist/segment request */
+    @Volatile private var urlToken: String? = null
 
     private var index = 0
     private var currentUrl: String? = null
@@ -99,7 +102,7 @@ class PlayerActivity : Activity() {
         val p = ExoPlayer.Builder(this)
             .setTrackSelector(trackSelector)
             .setLoadControl(loadControl)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(tokenFactory()))
             .build()
         p.setAudioAttributes(AudioAttributes.DEFAULT, true)
         p.addListener(object : Player.Listener {
@@ -122,6 +125,13 @@ class PlayerActivity : Activity() {
         })
         playerView.player = p
         player = p
+    }
+
+    private fun tokenFactory() = ResolvingDataSource.Factory(dataSourceFactory) { spec ->
+        val t = urlToken
+        val uri = spec.uri
+        if (t.isNullOrBlank() || !uri.isHierarchical || uri.getQueryParameter("token") != null) spec
+        else spec.withUri(uri.buildUpon().appendQueryParameter("token", t).build())
     }
 
     private fun episode() = Session.episodes[index]
@@ -152,6 +162,7 @@ class PlayerActivity : Activity() {
         val p = player ?: return
         val props = s.headers.filterKeys { !it.equals("User-Agent", true) }
         dataSourceFactory.setDefaultRequestProperties(props)
+        urlToken = s.token
 
         val b = MediaItem.Builder().setUri(Uri.parse(s.url))
         if (s.url.lowercase().contains(".m3u8")) b.setMimeType(MimeTypes.APPLICATION_M3U8)
@@ -253,6 +264,11 @@ class PlayerActivity : Activity() {
             }
             KeyEvent.KEYCODE_MEDIA_PREVIOUS, KeyEvent.KEYCODE_CHANNEL_DOWN, KeyEvent.KEYCODE_PAGE_UP -> {
                 if (event.repeatCount == 0) prevEpisode(); return true
+            }
+            KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> {
+                // back = return to the episode / dub list (AnimeActivity)
+                if (event.repeatCount == 0) { saveProgress(force = true); finish() }
+                return true
             }
             KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_INFO, KeyEvent.KEYCODE_SETTINGS,
             KeyEvent.KEYCODE_GUIDE, KeyEvent.KEYCODE_TV_CONTENTS_MENU -> {

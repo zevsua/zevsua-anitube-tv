@@ -10,9 +10,18 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import android.webkit.CookieManager
+import org.json.JSONObject
+import org.jsoup.Jsoup
 import java.io.IOException
 
-data class Stream(val url: String, val headers: Map<String, String>, val subtitle: String? = null)
+data class Stream(
+    val url: String,
+    val headers: Map<String, String>,
+    val subtitle: String? = null,
+    /** added as ?token= to every request (fenix) */
+    val token: String? = null
+)
 
 object Extractors {
 
@@ -47,6 +56,8 @@ object Extractors {
                     Stream(iframe, mapOf("User-Agent" to Net.UA, "Referer" to ANITUBE_REFERER))
                 lower.contains("ashdi.") -> ashdi(iframe)
                 lower.contains("tortuga.") -> tortuga(iframe)
+                lower.contains("fenixplay.") -> fenix(iframe)
+                lower.contains("moonanime.") -> moon(iframe)
                 else -> null
             }
         } catch (e: Exception) {
@@ -82,6 +93,124 @@ object Extractors {
         }
         if (!link.startsWith("http")) return null
         return Stream(link, mapOf("User-Agent" to Net.UA, "Referer" to "https://tortuga.tw/", "Origin" to "https://tortuga.tw"))
+    }
+
+    // ------------------------------------------------------------ fenixplay
+    private fun fenix(url: String): Stream? {
+        val page = Net.get(url, mapOf("Referer" to ANITUBE_REFERER))
+        val playlistJson = Regex("window\\.FENIX_PLAYLIST\\s*=\\s*(\\{.+?\\});", RegexOption.DOT_MATCHES_ALL)
+            .find(page)?.groupValues?.get(1) ?: return null
+        val accessJson = Regex("window\\.FENIX_MEDIA_ACCESS\\s*=\\s*(\\{.+?\\});", RegexOption.DOT_MATCHES_ALL)
+            .find(page)?.groupValues?.get(1)
+        val playlist = JSONObject(playlistJson)
+        val access = accessJson?.let { runCatching { JSONObject(it) }.getOrNull() }
+
+        val token = access?.optString("token")?.takeIf { it.isNotBlank() }
+            ?: playlist.optJSONObject("playback")?.optString("token")?.takeIf { it.isNotBlank() }
+        val origin = access?.optString("origin")?.takeIf { it.isNotBlank() } ?: "https://media.fenixplay.xyz"
+
+        val slug = playlist.optString("slug").takeIf { it.isNotBlank() } ?: return null
+        var edition = playlist.optString("default_edition").ifBlank { "tv" }
+        var number = 1
+        playlist.optJSONArray("episodes")?.optJSONObject(0)?.let { ep ->
+            ep.optString("edition").takeIf { it.isNotBlank() }?.let { edition = it }
+            ep.optInt("number", 0).takeIf { it > 0 }?.let { number = it }
+        }
+
+        val apiHeaders = HashMap<String, String>()
+        apiHeaders["Referer"] = url
+        if (token != null) apiHeaders["x-fenix-playback"] = token
+        val playback = JSONObject(Net.get("https://fenixplay.xyz/api/playback/$slug/episodes/$edition/$number", apiHeaders))
+        val ep = playback.optJSONObject("episode") ?: return null
+        var master = ep.optString("hls_master_url").takeIf { it.isNotBlank() }
+            ?: ep.optJSONArray("tracks")?.optJSONObject(0)?.optString("hls_url")?.takeIf { it.isNotBlank() }
+            ?: return null
+        if (master.startsWith("/")) master = origin + master
+
+        var subtitle: String? = null
+        ep.optJSONArray("subtitles")?.let { subs ->
+            for (i in 0 until subs.length()) {
+                val o = subs.optJSONObject(i) ?: continue
+                var u = o.optString("url").takeIf { it.isNotBlank() } ?: continue
+                if (u.startsWith("/")) u = origin + u
+                val good = o.optString("language") == "uk" && (o.optString("kind") == "full" || o.optBoolean("is_default"))
+                if (good || subtitle == null) subtitle = u
+                if (good) break
+            }
+        }
+        return Stream(
+            master,
+            mapOf("User-Agent" to Net.UA, "Origin" to origin, "Referer" to "$origin/"),
+            subtitle,
+            token
+        )
+    }
+
+    // ------------------------------------------------------------ moonanime
+    private val moonHeaders = mapOf(
+        "User-Agent" to Net.UA,
+        "Accept" to "*/*",
+        "Accept-Language" to "uk;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Referer" to "https://moonanime.art",
+        "Origin" to "https://moonanime.art"
+    )
+
+    private fun moon(url: String): Stream? {
+        val html = Net.get(url, moonHeaders)
+        val doc = Jsoup.parse(html)
+        val script = doc.select("script").map { it.html() }.firstOrNull { it.contains("atob(") } ?: return null
+        val b64 = Regex("atob\\([\"']([A-Za-z0-9+/=]+)[\"']\\)").find(script)?.groupValues?.get(1) ?: return null
+        val decrypted = moonDecryptScript(b64)
+        if (decrypted.isBlank()) return null
+
+        val fn = Regex("([a-zA-Z0-9_$]+)\\([\"']([A-Za-z0-9+/=]+)[\"']\\)").find(decrypted)?.groupValues?.get(1)
+        var clean = decrypted
+        if (fn != null) {
+            val body = Regex("function " + Regex.escape(fn) + "\\(e\\)\\{(.*?)\\}").find(decrypted)?.groupValues?.get(1) ?: ""
+            val key = Regex("(?:var|let|const)\\s+\\w+\\s*=\\s*[\"'](.*?)[\"']").find(body)?.groupValues?.get(1)
+            if (!key.isNullOrEmpty()) {
+                clean = Regex(Regex.escape(fn) + "\\([\"']([A-Za-z0-9+/=]+)[\"']\\)").replace(decrypted) { m ->
+                    "\"" + moonDecryptLink(m.groupValues[1], key) + "\""
+                }
+            }
+        }
+        val file = Regex("[\"']?file[\"']?\\s*:\\s*[\"']([^\"']+)[\"']").find(clean)?.groupValues?.get(1)
+            ?.let { unescape(it) } ?: return null
+        val sub = Regex("[\"']?subtitle[\"']?\\s*:\\s*[\"']([^\"']*)[\"']").find(clean)?.groupValues?.get(1)
+            ?.let { unescape(it) }?.takeIf { it.isNotBlank() }
+        val link = pickQuality(file) ?: return null
+        if (!link.startsWith("http")) return null
+        return Stream(link, moonHeaders, sub?.let { pickQuality(it) })
+    }
+
+    private fun moonDecryptScript(b64: String): String {
+        return try {
+            val d = Base64.decode(b64, Base64.DEFAULT)
+            if (d.size <= 33) return ""
+            var acc = d[0].toInt() and 0xFF
+            val key = d.copyOfRange(1, 33)
+            val out = ByteArray(d.size - 33)
+            for (i in out.indices) {
+                val c = d[i + 33].toInt() and 0xFF
+                val k = key[i % 32].toInt() and 0xFF
+                out[i] = (c xor k xor acc).toByte()
+                acc = (c + k) and 0xFF
+            }
+            String(out, Charsets.UTF_8)
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
+    private fun moonDecryptLink(b64: String, key: String): String {
+        return try {
+            val d = Base64.decode(b64, Base64.DEFAULT)
+            val k = key.toByteArray(Charsets.UTF_8)
+            val out = ByteArray(d.size) { i -> (d[i].toInt() xor k[i % k.size].toInt()).toByte() }
+            String(out, Charsets.UTF_8)
+        } catch (e: Exception) {
+            ""
+        }
     }
 
     /** PlayerJS strings may look like "[1080p]url1,[720p]url2". Pick the best one. */
@@ -154,6 +283,14 @@ class WebSniffer(
                     }
                     h["User-Agent"] = Net.UA
                     if (!h.keys.any { it.equals("Referer", true) }) h["Referer"] = url
+                    if (!h.keys.any { it.equals("Origin", true) }) {
+                        val o = android.net.Uri.parse(url)
+                        h["Origin"] = "${o.scheme}://${o.host}"
+                    }
+                    try {
+                        CookieManager.getInstance().getCookie(u)?.takeIf { it.isNotBlank() }?.let { h["Cookie"] = it }
+                    } catch (_: Exception) {
+                    }
                     val s = Stream(u, h)
                     Bg.main.post {
                         if (isHls) finish(Result.success(s)) else if (mp4Candidate == null) mp4Candidate = s
