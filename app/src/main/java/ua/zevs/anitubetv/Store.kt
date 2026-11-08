@@ -30,6 +30,11 @@ object Store {
         get() = p.getBoolean("auto_next", true)
         set(v) = p.edit().putBoolean("auto_next", v).apply()
 
+    /** "rating" or "news_read" */
+    var seasonSort: String
+        get() = p.getString("season_sort", "rating") ?: "rating"
+        set(v) = p.edit().putString("season_sort", v).apply()
+
     // ---- progress
     private fun key(url: String) = url.hashCode().toString()
 

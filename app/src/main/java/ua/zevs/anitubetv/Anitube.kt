@@ -13,7 +13,8 @@ data class AnimeItem(
     val title: String,
     val url: String,
     val poster: String?,
-    val info: String? = null
+    val info: String? = null,
+    val rating: Float = 0f
 )
 
 data class Episode(val name: String, val iframe: String, val sourceId: String)
@@ -50,14 +51,25 @@ object Anitube {
             val title = (story.selectFirst("h2")?.text() ?: a.text()).trim()
             if (title.isBlank()) continue
             val poster = imageOf(story.selectFirst(".story_c_l")) ?: imageOf(story)
-            var info: String? = null
+            var episodes: String? = null
             try {
                 val dt = story.selectFirst("div.story_infa dt:contains(Серій)")
                 val s = dt?.nextSibling()?.toString()?.let { Jsoup.parse(it).text() }?.trim()
-                if (!s.isNullOrBlank()) info = "Серій: $s"
+                if (!s.isNullOrBlank()) episodes = "Серій: $s"
             } catch (_: Exception) {
             }
-            out.add(AnimeItem(animeId(url), title, url, poster, info))
+            val rating = try {
+                val t = story.selectFirst("div.story_c_rate div.lexington-box span")?.text()
+                    ?: story.selectFirst("[class*=rate] span")?.text() ?: ""
+                Regex("\\d+(?:[.,]\\d+)?").find(t)?.value?.replace(',', '.')?.toFloatOrNull() ?: 0f
+            } catch (_: Exception) {
+                0f
+            }
+            val info = listOfNotNull(
+                if (rating > 0f) "★ " + (if (rating % 1f == 0f) rating.toInt().toString() else rating.toString()) else null,
+                episodes
+            ).joinToString("  ·  ").ifBlank { null }
+            out.add(AnimeItem(animeId(url), title, url, poster, info, rating))
         }
         return out
     }
@@ -66,6 +78,61 @@ object Anitube {
     fun latest(page: Int): List<AnimeItem> {
         val url = if (page <= 1) "${Net.BASE}/anime/" else "${Net.BASE}/anime/page/$page/"
         return parseList(Jsoup.parse(Net.get(url), Net.BASE))
+    }
+
+    /** Season tags on the site look like "Осінь 2026". Current season first. */
+    fun seasons(count: Int = 8): List<String> {
+        val cal = java.util.Calendar.getInstance()
+        var year = cal.get(java.util.Calendar.YEAR)
+        var idx = cal.get(java.util.Calendar.MONTH) / 3 // 0 winter,1 spring,2 summer,3 autumn
+        val names = arrayOf("Зима", "Весна", "Літо", "Осінь")
+        val out = ArrayList<String>()
+        repeat(count) {
+            out.add("${names[idx]} $year")
+            idx--
+            if (idx < 0) { idx = 3; year-- }
+        }
+        return out
+    }
+
+    /**
+     * All anime of a season. sort = "rating" or "news_read" (views).
+     * Asks the site (DLE) to sort, then also sorts by rating locally when needed.
+     */
+    fun season(tag: String, sort: String): List<AnimeItem> {
+        val base = "${Net.BASE}/tags/" + URLEncoder.encode(tag, "UTF-8").replace("+", "%20") + "/"
+        val all = ArrayList<AnimeItem>()
+        val seen = HashSet<String>()
+        fun addPage(list: List<AnimeItem>): Int {
+            var added = 0
+            for (a in list) if (seen.add(a.url)) { all.add(a); added++ }
+            return added
+        }
+        val first = try {
+            Net.post(
+                base,
+                mapOf(
+                    "dlenewssortby" to sort,
+                    "dledirection" to "desc",
+                    "set_new_sort" to "dle_sort_tags",
+                    "set_direction_sort" to "dle_direction_tags"
+                ),
+                mapOf("Referer" to base)
+            )
+        } catch (e: Exception) {
+            Net.get(base)
+        }
+        val firstDoc = Jsoup.parse(first, Net.BASE)
+        addPage(parseList(firstDoc))
+        val maxPage = try {
+            firstDoc.select("div.navigation a, .navigation a, .navi_pages a").mapNotNull { it.text().trim().toIntOrNull() }.maxOrNull() ?: 1
+        } catch (e: Exception) { 1 }
+        for (p in 2..minOf(maxOf(maxPage, 2), 12)) {
+            val list = try { parseList(Jsoup.parse(Net.get("${base}page/$p/", mapOf("Referer" to base)), Net.BASE)) }
+                catch (e: Exception) { break }
+            if (addPage(list) == 0) break
+        }
+        return if (sort == "rating") all.sortedByDescending { it.rating } else all
     }
 
     fun search(query: String): List<AnimeItem> {

@@ -202,6 +202,9 @@ class HomeActivity : TvActivity() {
     private fun buildTiles(): List<Tile> {
         val out = ArrayList<Tile>()
         out.add(Tile("AniTube", "🎬") { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) })
+        out.add(Tile(Anitube.seasons(1).first(), "🍂") {
+            startActivity(Intent(this, MainActivity::class.java).putExtra("season", "").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        })
         launchIntent(YOUTUBE)?.let { i -> out.add(Tile("YouTube", "▶️") { start(i) }) }
         out.add(Tile("Флешка / файли", "💾") { startActivity(Intent(this, FilesActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) })
         launchIntent(MIRACAST)?.let { i -> out.add(Tile("Трансляція", "📡") { start(i) }) }

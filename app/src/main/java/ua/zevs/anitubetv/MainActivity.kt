@@ -67,9 +67,61 @@ class MainActivity : TvActivity() {
 
         findViewById<View>(R.id.btnSearch).setOnClickListener { askSearch() }
         findViewById<View>(R.id.btnNew).setOnClickListener { showLatest() }
+        findViewById<View>(R.id.btnSeasons).setOnClickListener { askSeason() }
         findViewById<View>(R.id.btnSettings).setOnClickListener { showSettings(this) }
 
-        showLatest()
+        val season = intent.getStringExtra("season")
+        if (season != null) showSeason(season.ifBlank { Anitube.seasons(1).first() }) else showLatest()
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        val season = intent?.getStringExtra("season") ?: return
+        showSeason(season.ifBlank { Anitube.seasons(1).first() })
+    }
+
+    private var currentSeason: String? = null
+
+    private fun sortName(s: String) = if (s == "rating") "за рейтингом" else "за переглядами"
+
+    private fun askSeason() {
+        val seasons = Anitube.seasons(10)
+        val items = ArrayList<String>()
+        items.add("⇅  Сортування: ${sortName(Store.seasonSort)}")
+        seasons.forEachIndexed { i, sname -> items.add((if (i == 0) "🍂  $sname  (зараз)" else "      $sname")) }
+        AlertDialog.Builder(this).setTitle("Сезон")
+            .setItems(items.toTypedArray()) { _, which ->
+                if (which == 0) {
+                    Store.seasonSort = if (Store.seasonSort == "rating") "news_read" else "rating"
+                    currentSeason?.let { showSeason(it) }
+                    askSeason()
+                } else showSeason(seasons[which - 1])
+            }.show()
+    }
+
+    private fun showSeason(tag: String) {
+        latestMode = false
+        currentSeason = tag
+        val sort = Store.seasonSort
+        listTitle.text = "$tag  ·  ${sortName(sort)}"
+        setHistoryVisible(false)
+        gridAdapter.set(emptyList())
+        progress.visibility = View.VISIBLE
+        message.visibility = View.GONE
+        Bg.run({ Anitube.season(tag, sort) }) { r ->
+            progress.visibility = View.GONE
+            if (currentSeason != tag) return@run
+            r.onSuccess { list ->
+                gridAdapter.set(list)
+                if (list.isEmpty()) {
+                    message.text = "За сезон «$tag» поки нічого немає."
+                    message.visibility = View.VISIBLE
+                } else {
+                    listTitle.text = "$tag  ·  ${sortName(sort)}  ·  ${list.size} аніме"
+                    grid.post { grid.getChildAt(0)?.requestFocus() }
+                }
+            }.onFailure { showError(it) }
+        }
     }
 
     override fun onResume() {
@@ -110,6 +162,7 @@ class MainActivity : TvActivity() {
 
     private fun showLatest() {
         latestMode = true
+        currentSeason = null
         endReached = false
         page = 0
         listTitle.text = "Нові релізи"
@@ -168,6 +221,7 @@ class MainActivity : TvActivity() {
         val query = q.trim()
         if (query.length < 2) return
         latestMode = false
+        currentSeason = null
         listTitle.text = "Пошук: $query"
         setHistoryVisible(false)
         gridAdapter.set(emptyList())

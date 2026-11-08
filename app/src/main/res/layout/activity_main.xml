@@ -37,6 +37,13 @@
             android:text="Нові релізи" />
 
         <TextView
+            android:id="@+id/btnSeasons"
+            style="@style/Btn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🍂  Сезони" />
+
+        <TextView
             android:id="@+id/btnSettings"
             style="@style/Btn"
             android:layout_width="wrap_content"
