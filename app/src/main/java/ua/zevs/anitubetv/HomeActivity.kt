@@ -125,13 +125,13 @@ class HomeActivity : TvActivity() {
         tiles.adapter = tileAdapter
         tiles.itemAnimator = null
 
-        historyAdapter = HistoryAdapter { a ->
+        historyAdapter = HistoryAdapter(onClick = { a ->
             startActivity(
                 Intent(this, AnimeActivity::class.java)
                     .putExtra("url", a.url).putExtra("title", a.title).putExtra("poster", a.poster)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
-        }
+        })
         history.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         history.adapter = historyAdapter
         history.itemAnimator = null
