@@ -26,7 +26,7 @@ import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.PlayerView
 
 @OptIn(UnstableApi::class)
-class PlayerActivity : Activity() {
+class PlayerActivity : TvActivity() {
 
     private lateinit var playerView: PlayerView
     private lateinit var loading: View

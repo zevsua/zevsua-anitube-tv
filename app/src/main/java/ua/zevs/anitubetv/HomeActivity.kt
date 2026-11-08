@@ -63,7 +63,10 @@ class TileAdapter(private val onLong: ((Tile) -> Unit)? = null) : RecyclerView.A
     }
 }
 
-class HistoryAdapter(private val onClick: (AnimeItem) -> Unit) : RecyclerView.Adapter<HistoryAdapter.VH>() {
+class HistoryAdapter(
+    private val onClick: (AnimeItem) -> Unit,
+    private val onLong: ((AnimeItem) -> Unit)? = null
+) : RecyclerView.Adapter<HistoryAdapter.VH>() {
     val items = ArrayList<AnimeItem>()
 
     fun set(list: List<AnimeItem>) {
@@ -92,10 +95,11 @@ class HistoryAdapter(private val onClick: (AnimeItem) -> Unit) : RecyclerView.Ad
         h.subtitle.text = a.info ?: ""
         ImageLoader.load(h.poster, a.poster)
         h.itemView.setOnClickListener { onClick(a) }
+        h.itemView.setOnLongClickListener { onLong?.invoke(a); onLong != null }
     }
 }
 
-class HomeActivity : Activity() {
+class HomeActivity : TvActivity() {
 
     private lateinit var tiles: RecyclerView
     private lateinit var history: RecyclerView

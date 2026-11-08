@@ -15,7 +15,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
-class MainActivity : Activity() {
+class MainActivity : TvActivity() {
 
     private lateinit var grid: RecyclerView
     private lateinit var historyList: RecyclerView
@@ -25,7 +25,7 @@ class MainActivity : Activity() {
     private lateinit var progress: ProgressBar
 
     private lateinit var gridAdapter: AnimeAdapter
-    private lateinit var historyAdapter: AnimeAdapter
+    private lateinit var historyAdapter: HistoryAdapter
 
     private var page = 1
     private var loading = false
@@ -45,11 +45,11 @@ class MainActivity : Activity() {
         progress = findViewById(R.id.progress)
 
         gridAdapter = AnimeAdapter(::openAnime, null) { if (latestMode) loadMore() }
-        val span = maxOf(3, (resources.displayMetrics.widthPixels / resources.displayMetrics.density / 165f).toInt())
+        val span = maxOf(3, (resources.displayMetrics.widthPixels / resources.displayMetrics.density / 162f).toInt())
         grid.layoutManager = GridLayoutManager(this, span)
         grid.adapter = gridAdapter
 
-        historyAdapter = AnimeAdapter(::openAnime, { item ->
+        historyAdapter = HistoryAdapter(::openAnime, { item ->
             AlertDialog.Builder(this)
                 .setTitle(item.title)
                 .setItems(arrayOf("Відкрити", "Прибрати з «Продовжити перегляд»")) { _, which ->
@@ -58,6 +58,12 @@ class MainActivity : Activity() {
         })
         historyList.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         historyList.adapter = historyAdapter
+        historyList.itemAnimator = null
+
+        // "Continue watching" takes space: hide it while browsing the grid
+        window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener { _, newFocus ->
+            if (newFocus != null) setHistoryVisible(!isInside(grid, newFocus))
+        }
 
         findViewById<View>(R.id.btnSearch).setOnClickListener { askSearch() }
         findViewById<View>(R.id.btnNew).setOnClickListener { showLatest() }
@@ -72,11 +78,25 @@ class MainActivity : Activity() {
     }
 
     private fun refreshHistory() {
-        val h = Store.history()
-        historyAdapter.set(h)
-        val vis = if (h.isEmpty()) View.GONE else View.VISIBLE
-        historyTitle.visibility = vis
-        historyList.visibility = vis
+        historyAdapter.set(Store.history())
+        setHistoryVisible(!isInside(grid, currentFocus))
+    }
+
+    private fun setHistoryVisible(show: Boolean) {
+        val vis = if (show && historyAdapter.items.isNotEmpty()) View.VISIBLE else View.GONE
+        if (historyList.visibility != vis) {
+            historyTitle.visibility = vis
+            historyList.visibility = vis
+        }
+    }
+
+    private fun isInside(parent: View, v: View?): Boolean {
+        var cur: View? = v
+        while (cur != null) {
+            if (cur === parent) return true
+            cur = cur.parent as? View
+        }
+        return false
     }
 
     private fun openAnime(item: AnimeItem) {
@@ -93,6 +113,7 @@ class MainActivity : Activity() {
         endReached = false
         page = 0
         listTitle.text = "Нові релізи"
+        setHistoryVisible(false)
         gridAdapter.set(emptyList())
         loadMore()
     }
@@ -111,7 +132,7 @@ class MainActivity : Activity() {
                 if (list.isEmpty()) endReached = true
                 val wasEmpty = gridAdapter.items.isEmpty()
                 gridAdapter.add(list)
-                if (wasEmpty && list.isNotEmpty() && Store.history().isEmpty()) {
+                if (wasEmpty && list.isNotEmpty() && (Store.history().isEmpty() || historyList.visibility != View.VISIBLE)) {
                     grid.post { grid.getChildAt(0)?.requestFocus() }
                 }
             }.onFailure { showError(it) }
@@ -148,6 +169,7 @@ class MainActivity : Activity() {
         if (query.length < 2) return
         latestMode = false
         listTitle.text = "Пошук: $query"
+        setHistoryVisible(false)
         gridAdapter.set(emptyList())
         progress.visibility = View.VISIBLE
         message.visibility = View.GONE

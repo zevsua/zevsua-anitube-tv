@@ -14,7 +14,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.io.File
 
-class FilesActivity : Activity() {
+class FilesActivity : TvActivity() {
 
     private data class Entry(val label: String, val file: File, val isDir: Boolean)
 

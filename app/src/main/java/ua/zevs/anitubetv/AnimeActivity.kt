@@ -11,7 +11,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
-class AnimeActivity : Activity() {
+class AnimeActivity : TvActivity() {
 
     private lateinit var sourcesView: RecyclerView
     private lateinit var episodesView: RecyclerView
