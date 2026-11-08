@@ -16,6 +16,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
@@ -127,10 +128,10 @@ class PlayerActivity : Activity() {
         player = p
     }
 
-    private fun tokenFactory() = ResolvingDataSource.Factory(dataSourceFactory) { spec ->
+    private fun tokenFactory() = ResolvingDataSource.Factory(DefaultDataSource.Factory(this, dataSourceFactory)) { spec ->
         val t = urlToken
         val uri = spec.uri
-        if (t.isNullOrBlank() || !uri.isHierarchical || uri.getQueryParameter("token") != null) spec
+        if (t.isNullOrBlank() || uri.scheme?.startsWith("http") != true || uri.getQueryParameter("token") != null) spec
         else spec.withUri(uri.buildUpon().appendQueryParameter("token", t).build())
     }
 
@@ -150,7 +151,7 @@ class PlayerActivity : Activity() {
         loadingText.text = "${ep.name}\nОтримую відео…"
         loading.visibility = View.VISIBLE
         showOsd(sticky = true)
-        Session.anime?.let { Store.addHistory(it, ep.name) }
+        Session.anime?.let { if (!it.url.startsWith("local:")) Store.addHistory(it, ep.name) }
 
         resolving = Extractors.resolve(this, ep.iframe) { r ->
             r.onSuccess { startStream(it) }
@@ -164,7 +165,9 @@ class PlayerActivity : Activity() {
         dataSourceFactory.setDefaultRequestProperties(props)
         urlToken = s.token
 
-        val b = MediaItem.Builder().setUri(Uri.parse(s.url))
+        val uri = if (s.url.startsWith("file://")) Uri.fromFile(java.io.File(s.url.removePrefix("file://")))
+        else Uri.parse(s.url)
+        val b = MediaItem.Builder().setUri(uri)
         if (s.url.lowercase().contains(".m3u8")) b.setMimeType(MimeTypes.APPLICATION_M3U8)
         val sub = s.subtitle
         if (!sub.isNullOrBlank() && sub.startsWith("http")) {

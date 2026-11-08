@@ -52,6 +52,7 @@ object Extractors {
         val lower = iframe.lowercase()
         return try {
             when {
+                lower.startsWith("file://") || lower.startsWith("content://") -> Stream(iframe, emptyMap())
                 Regex("\\.(m3u8|mp4)(\\?|$)").containsMatchIn(lower) ->
                     Stream(iframe, mapOf("User-Agent" to Net.UA, "Referer" to ANITUBE_REFERER))
                 lower.contains("ashdi.") -> ashdi(iframe)
