@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    style="@style/Card"
+    android:layout_width="150dp"
+    android:layout_height="wrap_content"
+    android:layout_margin="6dp"
+    android:orientation="vertical"
+    android:padding="5dp">
+
+    <ImageView
+        android:id="@+id/poster"
+        android:layout_width="match_parent"
+        android:layout_height="200dp"
+        android:background="#22FFFFFF"
+        android:scaleType="centerCrop" />
+
+    <TextView
+        android:id="@+id/title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="5dp"
+        android:ellipsize="end"
+        android:lines="2"
+        android:textColor="@color/text"
+        android:textSize="14sp" />
+
+    <TextView
+        android:id="@+id/subtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:textColor="@color/accent"
+        android:textSize="12sp"
+        android:visibility="gone" />
+</LinearLayout>
